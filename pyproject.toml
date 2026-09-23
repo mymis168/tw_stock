@@ -1,9 +1,14 @@
 [project]
 name = "tw-stock"
 version = "0.1.0"
-description = "Add your description here"
+description = "台股股價分析與績優股搜尋平台"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
+dependencies =[
     "streamlit>=1.64.0",
+    "yfinance>=0.2.40",
+    "plotly>=5.24.0",
+    "pandas>=2.0.0",
+    "numpy>=1.26.0",
+    "pyside6>=6.6.0",
 ]
