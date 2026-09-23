@@ -243,6 +243,14 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     rs = avg_gain / avg_loss.replace(0, pd.NA)
     out["RSI"] = 100 - (100 / (1 + rs))
 
+    # KD (KDJ) - 9, 3, 3
+    low_9 = out["Low"].rolling(window=9, min_periods=1).min()
+    high_9 = out["High"].rolling(window=9, min_periods=1).max()
+    rsv = (close - low_9) / (high_9 - low_9).replace(0, pd.NA) * 100
+    out["KD_K"] = rsv.ewm(alpha=1 / 3, adjust=False).mean()
+    out["KD_D"] = out["KD_K"].ewm(alpha=1 / 3, adjust=False).mean()
+    out["KD_J"] = 3 * out["KD_K"] - 2 * out["KD_D"]
+
     return out
 
 
@@ -366,6 +374,28 @@ def compute_advice(df: pd.DataFrame) -> dict:
             score += 10
             reasons.append("收盤價觸及布林下軌，短期偏冷")
 
+    # KD (KDJ)
+    kd_k = last.get("KD_K")
+    kd_d = last.get("KD_D")
+    kd_j = last.get("KD_J")
+    if pd.notna(kd_k) and pd.notna(kd_d):
+        if kd_k > 80 and kd_d > 80:
+            score -= 10
+            reasons.append(f"KD 超買 (K={kd_k:.1f}, D={kd_d:.1f})，注意回調")
+        elif kd_k<20 and kd_d<20:
+            score += 10
+            reasons.append(f"KD 超賣 (K={kd_k:.1f}, D={kd_d:.1f})，可能反彈")
+        elif kd_k> kd_d:
+            score += 5
+            reasons.append(f"KD 金叉 (K={kd_k:.1f} > D={kd_d:.1f})，偏多")
+        else:
+            score -= 5
+            reasons.append(f"KD 死叉 (K={kd_k:.1f}< D={kd_d:.1f})，偏空")
+        if pd.notna(kd_j) and kd_j > 100:
+            reasons.append(f"J={kd_j:.1f} 嚴重超買")
+        elif pd.notna(kd_j) and kd_j<0:
+            reasons.append(f"J={kd_j:.1f} 嚴重超賣")
+
     score = max(-100, min(100, score))
     if score >= 40:
         signal = "強烈看多"
@@ -431,6 +461,18 @@ def rsi_figure(df: pd.DataFrame, title: str) -> go.Figure:
     fig.add_hline(y=70, line=dict(color="#d62728", width=1, dash="dash"))
     fig.add_hline(y=30, line=dict(color="#2ca02c", width=1, dash="dash"))
     fig.update_layout(title=title, xaxis_title="日期", yaxis_title="RSI", yaxis=dict(range=[0, 100]), height=300, template="plotly_white")
+    return fig
+
+
+def kd_figure(df: pd.DataFrame, title: str) -> go.Figure:
+    """KD (KDJ) 圖。"""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df["KD_K"], name="K", line=dict(color="#1f77b4")))
+    fig.add_trace(go.Scatter(x=df.index, y=df["KD_D"], name="D", line=dict(color="#ff7f0e")))
+    fig.add_trace(go.Scatter(x=df.index, y=df["KD_J"], name="J", line=dict(color="#2ca02c")))
+    fig.add_hline(y=80, line=dict(color="#d62728", width=1, dash="dash"))
+    fig.add_hline(y=20, line=dict(color="#2ca02c", width=1, dash="dash"))
+    fig.update_layout(title=title, xaxis_title="日期", yaxis_title="KD", yaxis=dict(range=[0, 100]), height=300, template="plotly_white")
     return fig
 
 
@@ -517,11 +559,13 @@ def main() -> None:
     st.subheader("📊 股價與技術指標")
     st.plotly_chart(price_figure(df, f"{name} 股價（{period_key}）"), use_container_width=True)
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.plotly_chart(macd_figure(df, "MACD"), use_container_width=True)
     with c2:
         st.plotly_chart(rsi_figure(df, "RSI(14)"), use_container_width=True)
+    with c3:
+        st.plotly_chart(kd_figure(df, "KD (KDJ)"), use_container_width=True)
 
     # 加權指數趨勢
     if not idx_df.empty:
